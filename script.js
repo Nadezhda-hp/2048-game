@@ -2,7 +2,8 @@
   'use strict';
 
   var SIZE = 4;
-  var ANIM_DURATION = 150;
+  var GAP = 10;
+  var ANIM_MS = 150;
 
   var boardEl = document.getElementById('board');
   var scoreEl = document.getElementById('score');
@@ -22,6 +23,7 @@
   var noRecords = document.getElementById('no-records');
   var btnCloseLeaders = document.getElementById('btn-close-leaders');
   var mobileControls = document.getElementById('mobile-controls');
+  var wrapper = document.querySelector('.board-wrapper');
 
   var grid = [];
   var score = 0;
@@ -29,55 +31,63 @@
   var prevGrid = null;
   var prevScore = null;
   var gameOver = false;
-  var moved = false;
-  var tileElements = [];
+  var tileEls = [];
   var animating = false;
+  var boardPx = 420;
+  var cellPx = 0;
 
-  // ========================
-  //   Helpers
-  // ========================
+  function calcSizes() {
+    var maxW = Math.min(420, window.innerWidth - 40);
+    boardPx = Math.floor(maxW);
+    cellPx = Math.floor((boardPx - GAP * (SIZE + 1)) / SIZE);
+    boardPx = cellPx * SIZE + GAP * (SIZE + 1);
 
-  function getBoardMetrics() {
-    var boardWidth = boardEl.clientWidth;
-    var gap = Math.round(boardWidth * 0.024);
-    var cellSize = Math.floor((boardWidth - (SIZE + 1) * gap) / SIZE);
-    return { gap: gap, cellSize: cellSize };
+    wrapper.style.width = boardPx + 'px';
+    wrapper.style.height = boardPx + 'px';
+    boardEl.style.width = boardPx + 'px';
+    boardEl.style.height = boardPx + 'px';
   }
 
-  function cellPos(row, col) {
-    var m = getBoardMetrics();
-    return {
-      left: m.gap + col * (m.cellSize + m.gap),
-      top: m.gap + row * (m.cellSize + m.gap)
-    };
-  }
+  function cellLeft(col) { return GAP + col * (cellPx + GAP); }
+  function cellTop(row) { return GAP + row * (cellPx + GAP); }
 
-  function deepCopy(arr) {
-    return arr.map(function (row) { return row.slice(); });
-  }
+  function deepCopy(a) { return a.map(function (r) { return r.slice(); }); }
 
   function isMobile() {
     return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   }
 
-  // ========================
-  //   Board Init
-  // ========================
+  function fontSize(value) {
+    if (cellPx < 60) {
+      if (value >= 1024) return '14px';
+      if (value >= 128) return '18px';
+      return '22px';
+    }
+    if (cellPx < 85) {
+      if (value >= 1024) return '18px';
+      if (value >= 128) return '24px';
+      return '28px';
+    }
+    if (value >= 1024) return '24px';
+    if (value >= 128) return '30px';
+    return '36px';
+  }
 
-  function createBoard() {
-    boardEl.textContent = '';
-    tileElements = [];
-    var m = getBoardMetrics();
+  // ---- Board ----
+
+  function drawCells() {
+    var old = boardEl.querySelectorAll('.cell');
+    for (var i = 0; i < old.length; i++) boardEl.removeChild(old[i]);
+
     for (var r = 0; r < SIZE; r++) {
       for (var c = 0; c < SIZE; c++) {
-        var cell = document.createElement('div');
-        cell.className = 'cell';
-        var pos = cellPos(r, c);
-        cell.style.left = pos.left + 'px';
-        cell.style.top = pos.top + 'px';
-        cell.style.width = m.cellSize + 'px';
-        cell.style.height = m.cellSize + 'px';
-        boardEl.appendChild(cell);
+        var d = document.createElement('div');
+        d.className = 'cell';
+        d.style.width = cellPx + 'px';
+        d.style.height = cellPx + 'px';
+        d.style.left = cellLeft(c) + 'px';
+        d.style.top = cellTop(r) + 'px';
+        boardEl.appendChild(d);
       }
     }
   }
@@ -86,75 +96,61 @@
     var g = [];
     for (var r = 0; r < SIZE; r++) {
       g[r] = [];
-      for (var c = 0; c < SIZE; c++) {
-        g[r][c] = 0;
-      }
+      for (var c = 0; c < SIZE; c++) g[r][c] = 0;
     }
     return g;
   }
 
   function emptyCells() {
-    var cells = [];
-    for (var r = 0; r < SIZE; r++) {
-      for (var c = 0; c < SIZE; c++) {
-        if (grid[r][c] === 0) cells.push({ r: r, c: c });
-      }
-    }
-    return cells;
+    var out = [];
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (grid[r][c] === 0) out.push({ r: r, c: c });
+    return out;
   }
 
-  function addRandomTile(count) {
-    var empty = emptyCells();
-    var n = Math.min(count || 1, empty.length);
+  function addRandom(n) {
+    var free = emptyCells();
+    n = Math.min(n || 1, free.length);
     for (var i = 0; i < n; i++) {
-      var idx = Math.floor(Math.random() * empty.length);
-      var cell = empty[idx];
-      grid[cell.r][cell.c] = Math.random() < 0.9 ? 2 : 4;
-      empty.splice(idx, 1);
+      var idx = Math.floor(Math.random() * free.length);
+      grid[free[idx].r][free[idx].c] = Math.random() < 0.9 ? 2 : 4;
+      free.splice(idx, 1);
     }
   }
 
-  // ========================
-  //   Rendering
-  // ========================
+  // ---- Tiles ----
 
   function clearTiles() {
-    tileElements.forEach(function (el) {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    });
-    tileElements = [];
+    for (var i = 0; i < tileEls.length; i++)
+      if (tileEls[i].parentNode) tileEls[i].parentNode.removeChild(tileEls[i]);
+    tileEls = [];
   }
 
-  function createTileEl(value, row, col, isNew) {
-    var m = getBoardMetrics();
+  function makeTile(val, r, c, extra) {
     var el = document.createElement('div');
-    var cls = value <= 2048 ? 'tile-' + value : 'tile-big';
-    el.className = 'tile ' + cls;
-    if (isNew) el.classList.add('tile-new');
-    var pos = cellPos(row, col);
-    el.style.left = pos.left + 'px';
-    el.style.top = pos.top + 'px';
-    el.style.width = m.cellSize + 'px';
-    el.style.height = m.cellSize + 'px';
-    if (m.cellSize < 80) {
-      el.style.fontSize = value >= 1024 ? '18px' : value >= 128 ? '22px' : '28px';
-    }
-    el.textContent = value;
+    el.className = 'tile ' + (val <= 2048 ? 'tile-' + val : 'tile-big');
+    if (extra) el.classList.add(extra);
+    el.style.width = cellPx + 'px';
+    el.style.height = cellPx + 'px';
+    el.style.left = cellLeft(c) + 'px';
+    el.style.top = cellTop(r) + 'px';
+    el.style.fontSize = fontSize(val);
+    el.style.transition = 'left ' + ANIM_MS + 'ms ease, top ' + ANIM_MS + 'ms ease';
+    el.textContent = val;
     boardEl.appendChild(el);
-    tileElements.push(el);
+    tileEls.push(el);
     return el;
   }
 
-  function renderGrid(newTiles, mergedTiles) {
+  function renderAll(newCells, mergedCells) {
     clearTiles();
     for (var r = 0; r < SIZE; r++) {
       for (var c = 0; c < SIZE; c++) {
-        if (grid[r][c] !== 0) {
-          var isNew = newTiles && newTiles.some(function (t) { return t.r === r && t.c === c; });
-          var isMerged = mergedTiles && mergedTiles.some(function (t) { return t.r === r && t.c === c; });
-          var el = createTileEl(grid[r][c], r, c, isNew);
-          if (isMerged) el.classList.add('tile-merged');
-        }
+        if (grid[r][c] === 0) continue;
+        var isNew = newCells && newCells.some(function (t) { return t.r === r && t.c === c; });
+        var isMerged = mergedCells && mergedCells.some(function (t) { return t.r === r && t.c === c; });
+        makeTile(grid[r][c], r, c, isNew ? 'tile-new' : isMerged ? 'tile-merged' : null);
       }
     }
   }
@@ -164,348 +160,260 @@
     if (score > best) {
       best = score;
       bestEl.textContent = best;
-      saveBest();
+      localStorage.setItem('2048_best', String(best));
     }
   }
 
-  // ========================
-  //   Movement Logic
-  // ========================
+  // ---- Slide Logic ----
 
   function slideRow(row) {
-    var filtered = row.filter(function (v) { return v !== 0; });
-    var result = [];
-    var mergeScore = 0;
-    var mergedIndices = [];
-
-    for (var i = 0; i < filtered.length; i++) {
-      if (i + 1 < filtered.length && filtered[i] === filtered[i + 1]) {
-        var merged = filtered[i] * 2;
-        result.push(merged);
-        mergeScore += merged;
-        mergedIndices.push(result.length - 1);
+    var f = row.filter(function (v) { return v !== 0; });
+    var out = [], pts = 0, mi = [];
+    for (var i = 0; i < f.length; i++) {
+      if (i + 1 < f.length && f[i] === f[i + 1]) {
+        var v = f[i] * 2;
+        out.push(v);
+        pts += v;
+        mi.push(out.length - 1);
         i++;
       } else {
-        result.push(filtered[i]);
+        out.push(f[i]);
       }
     }
-
-    while (result.length < SIZE) result.push(0);
-
-    return { row: result, score: mergeScore, mergedIndices: mergedIndices };
+    while (out.length < SIZE) out.push(0);
+    return { row: out, pts: pts, mi: mi };
   }
 
-  function getColumn(g, c) {
+  function getCol(g, c) {
     var col = [];
     for (var r = 0; r < SIZE; r++) col.push(g[r][c]);
     return col;
   }
-
-  function setColumn(g, c, col) {
+  function setCol(g, c, col) {
     for (var r = 0; r < SIZE; r++) g[r][c] = col[r];
   }
 
-  function move(direction) {
+  function move(dir) {
     if (animating || gameOver) return false;
 
-    prevGrid = deepCopy(grid);
-    prevScore = score;
+    var oldGrid = deepCopy(grid);
+    var oldScore = score;
+    var pts = 0, merged = [], changed = false;
 
-    var totalMergeScore = 0;
-    var merged = [];
-    var didMove = false;
-
-    if (direction === 'left') {
+    if (dir === 'left') {
       for (var r = 0; r < SIZE; r++) {
-        var result = slideRow(grid[r]);
-        if (grid[r].join(',') !== result.row.join(',')) didMove = true;
-        grid[r] = result.row;
-        totalMergeScore += result.score;
-        result.mergedIndices.forEach(function (c) { merged.push({ r: r, c: c }); });
+        var res = slideRow(grid[r]);
+        if (grid[r].join() !== res.row.join()) changed = true;
+        grid[r] = res.row;
+        pts += res.pts;
+        res.mi.forEach(function (c) { merged.push({ r: r, c: c }); });
       }
-    } else if (direction === 'right') {
+    } else if (dir === 'right') {
       for (var r = 0; r < SIZE; r++) {
-        var reversed = grid[r].slice().reverse();
-        var result = slideRow(reversed);
-        var row = result.row.reverse();
-        if (grid[r].join(',') !== row.join(',')) didMove = true;
+        var res = slideRow(grid[r].slice().reverse());
+        var row = res.row.reverse();
+        if (grid[r].join() !== row.join()) changed = true;
         grid[r] = row;
-        totalMergeScore += result.score;
-        result.mergedIndices.forEach(function (c) {
-          merged.push({ r: r, c: SIZE - 1 - c });
-        });
+        pts += res.pts;
+        res.mi.forEach(function (c) { merged.push({ r: r, c: SIZE - 1 - c }); });
       }
-    } else if (direction === 'up') {
+    } else if (dir === 'up') {
       for (var c = 0; c < SIZE; c++) {
-        var col = getColumn(grid, c);
-        var result = slideRow(col);
-        if (col.join(',') !== result.row.join(',')) didMove = true;
-        setColumn(grid, c, result.row);
-        totalMergeScore += result.score;
-        result.mergedIndices.forEach(function (r) { merged.push({ r: r, c: c }); });
+        var col = getCol(grid, c);
+        var res = slideRow(col);
+        if (col.join() !== res.row.join()) changed = true;
+        setCol(grid, c, res.row);
+        pts += res.pts;
+        res.mi.forEach(function (r) { merged.push({ r: r, c: c }); });
       }
-    } else if (direction === 'down') {
+    } else if (dir === 'down') {
       for (var c = 0; c < SIZE; c++) {
-        var col = getColumn(grid, c).reverse();
-        var result = slideRow(col);
-        var newCol = result.row.reverse();
-        var origCol = getColumn(grid, c);
-        if (origCol.join(',') !== newCol.join(',')) didMove = true;
-        setColumn(grid, c, newCol);
-        totalMergeScore += result.score;
-        result.mergedIndices.forEach(function (r) {
-          merged.push({ r: SIZE - 1 - r, c: c });
-        });
+        var col = getCol(grid, c).reverse();
+        var res = slideRow(col);
+        var nc = res.row.reverse();
+        if (getCol(oldGrid, c).join() !== nc.join()) changed = true;
+        setCol(grid, c, nc);
+        pts += res.pts;
+        res.mi.forEach(function (r) { merged.push({ r: SIZE - 1 - r, c: c }); });
       }
     }
 
-    if (!didMove) {
-      prevGrid = null;
-      prevScore = null;
-      return false;
-    }
+    if (!changed) return false;
 
-    score += totalMergeScore;
+    prevGrid = oldGrid;
+    prevScore = oldScore;
+    score += pts;
 
-    animateMove(direction, prevGrid, grid, merged, totalMergeScore);
-
+    doAnimate(dir, oldGrid, merged, pts);
     return true;
   }
 
-  // ========================
-  //   Animation
-  // ========================
+  // ---- Animation ----
 
-  function animateMove(direction, oldGrid, newGrid, mergedTiles, mergeScore) {
+  function doAnimate(dir, oldGrid, mergedCells, pts) {
     animating = true;
     clearTiles();
 
-    var movingTiles = [];
-    var oldPositions = [];
+    var tiles = [];
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (oldGrid[r][c] !== 0)
+          tiles.push({ r: r, c: c, val: oldGrid[r][c] });
 
-    for (var r = 0; r < SIZE; r++) {
-      for (var c = 0; c < SIZE; c++) {
-        if (oldGrid[r][c] !== 0) {
-          oldPositions.push({ r: r, c: c, value: oldGrid[r][c] });
-        }
-      }
-    }
+    var targets = getTargets(oldGrid, dir);
+    var els = [];
 
-    var m = getBoardMetrics();
-    oldPositions.forEach(function (pos) {
-      var el = document.createElement('div');
-      var cls = pos.value <= 2048 ? 'tile-' + pos.value : 'tile-big';
-      el.className = 'tile ' + cls;
-      var cellP = cellPos(pos.r, pos.c);
-      el.style.left = cellP.left + 'px';
-      el.style.top = cellP.top + 'px';
-      el.style.width = m.cellSize + 'px';
-      el.style.height = m.cellSize + 'px';
-      if (m.cellSize < 80) {
-        el.style.fontSize = pos.value >= 1024 ? '18px' : pos.value >= 128 ? '22px' : '28px';
-      }
-      el.textContent = pos.value;
-      boardEl.appendChild(el);
-      movingTiles.push(el);
+    tiles.forEach(function (t, i) {
+      var el = makeTile(t.val, t.r, t.c, null);
+      el.style.transition = 'none';
+      els.push(el);
     });
 
     void boardEl.offsetWidth;
 
-    var targets = computeTargets(oldGrid, direction);
-    targets.forEach(function (t, i) {
-      var el = movingTiles[i];
-      var dest = cellPos(t.r, t.c);
-      el.style.left = dest.left + 'px';
-      el.style.top = dest.top + 'px';
+    els.forEach(function (el, i) {
+      el.style.transition = 'left ' + ANIM_MS + 'ms ease, top ' + ANIM_MS + 'ms ease';
+      el.style.left = cellLeft(targets[i].c) + 'px';
+      el.style.top = cellTop(targets[i].r) + 'px';
     });
 
-    if (mergeScore > 0) {
-      showScorePop('+' + mergeScore);
-    }
+    if (pts > 0) showScorePop('+' + pts);
 
     setTimeout(function () {
-      movingTiles.forEach(function (el) {
-        if (el.parentNode) el.parentNode.removeChild(el);
-      });
+      clearTiles();
 
-      var empty = emptyCells();
-      var newTileCount = empty.length > 0 ? (Math.random() < 0.9 ? 1 : 2) : 0;
-      newTileCount = Math.min(newTileCount, empty.length);
-      var newTiles = [];
-      for (var i = 0; i < newTileCount; i++) {
-        var idx = Math.floor(Math.random() * empty.length);
-        var cell = empty[idx];
-        grid[cell.r][cell.c] = Math.random() < 0.9 ? 2 : 4;
-        newTiles.push(cell);
-        empty.splice(idx, 1);
+      var free = emptyCells();
+      var addCount = Math.min(Math.random() < 0.9 ? 1 : 2, free.length);
+      var newCells = [];
+      for (var i = 0; i < addCount; i++) {
+        var idx = Math.floor(Math.random() * free.length);
+        grid[free[idx].r][free[idx].c] = Math.random() < 0.9 ? 2 : 4;
+        newCells.push(free[idx]);
+        free.splice(idx, 1);
       }
 
-      renderGrid(newTiles, mergedTiles);
+      renderAll(newCells, mergedCells);
       updateScore();
       saveGame();
 
-      if (checkGameOver()) {
+      if (isGameOver()) {
         gameOver = true;
         showGameOver();
       }
-
       animating = false;
-    }, ANIM_DURATION + 20);
+    }, ANIM_MS + 30);
   }
 
-  function computeTargets(oldGrid, direction) {
-    var positions = [];
-    var targetGrid = emptyGrid();
-    var occupied = emptyGrid();
+  function getTargets(old, dir) {
+    var out = [];
+    var process = [];
 
-    if (direction === 'left') {
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (old[r][c] !== 0)
+          process.push({ r: r, c: c, val: old[r][c] });
+
+    if (dir === 'left') {
       for (var r = 0; r < SIZE; r++) {
-        var filtered = [];
-        for (var c = 0; c < SIZE; c++) {
-          if (oldGrid[r][c] !== 0) filtered.push({ value: oldGrid[r][c], origC: c });
-        }
+        var items = process.filter(function (p) { return p.r === r; })
+                           .sort(function (a, b) { return a.c - b.c; });
         var tc = 0;
-        for (var i = 0; i < filtered.length; i++) {
-          if (i + 1 < filtered.length && filtered[i].value === filtered[i + 1].value) {
-            positions.push({ r: r, c: tc });
-            i++;
-            positions.push({ r: r, c: tc });
-            tc++;
+        for (var i = 0; i < items.length; i++) {
+          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
+            items[i].target = { r: r, c: tc };
+            items[i + 1].target = { r: r, c: tc };
+            tc++; i++;
           } else {
-            positions.push({ r: r, c: tc });
+            items[i].target = { r: r, c: tc };
             tc++;
           }
         }
       }
-    } else if (direction === 'right') {
+    } else if (dir === 'right') {
       for (var r = 0; r < SIZE; r++) {
-        var filtered = [];
-        for (var c = SIZE - 1; c >= 0; c--) {
-          if (oldGrid[r][c] !== 0) filtered.push({ value: oldGrid[r][c], origC: c });
-        }
+        var items = process.filter(function (p) { return p.r === r; })
+                           .sort(function (a, b) { return b.c - a.c; });
         var tc = SIZE - 1;
-        var rowTargets = [];
-        for (var i = 0; i < filtered.length; i++) {
-          if (i + 1 < filtered.length && filtered[i].value === filtered[i + 1].value) {
-            rowTargets.push({ r: r, c: tc });
-            i++;
-            rowTargets.push({ r: r, c: tc });
-            tc--;
+        for (var i = 0; i < items.length; i++) {
+          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
+            items[i].target = { r: r, c: tc };
+            items[i + 1].target = { r: r, c: tc };
+            tc--; i++;
           } else {
-            rowTargets.push({ r: r, c: tc });
+            items[i].target = { r: r, c: tc };
             tc--;
           }
         }
-        for (var j = rowTargets.length - 1; j >= 0; j--) {
-          positions.push(rowTargets[j]);
-        }
       }
-    } else if (direction === 'up') {
-      var colSorted = [];
+    } else if (dir === 'up') {
       for (var c = 0; c < SIZE; c++) {
-        var filtered = [];
-        for (var r = 0; r < SIZE; r++) {
-          if (oldGrid[r][c] !== 0) filtered.push({ value: oldGrid[r][c], origR: r });
-        }
+        var items = process.filter(function (p) { return p.c === c; })
+                           .sort(function (a, b) { return a.r - b.r; });
         var tr = 0;
-        for (var i = 0; i < filtered.length; i++) {
-          if (i + 1 < filtered.length && filtered[i].value === filtered[i + 1].value) {
-            colSorted.push({ pos: { r: tr, c: c }, origR: filtered[i].origR, origC: c });
-            i++;
-            colSorted.push({ pos: { r: tr, c: c }, origR: filtered[i].origR, origC: c });
-            tr++;
+        for (var i = 0; i < items.length; i++) {
+          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
+            items[i].target = { r: tr, c: c };
+            items[i + 1].target = { r: tr, c: c };
+            tr++; i++;
           } else {
-            colSorted.push({ pos: { r: tr, c: c }, origR: filtered[i].origR, origC: c });
+            items[i].target = { r: tr, c: c };
             tr++;
           }
         }
       }
-      var posMap = [];
-      for (var r = 0; r < SIZE; r++) {
-        for (var c = 0; c < SIZE; c++) {
-          if (oldGrid[r][c] !== 0) {
-            var found = null;
-            for (var k = 0; k < colSorted.length; k++) {
-              if (colSorted[k].origR === r && colSorted[k].origC === c) {
-                found = colSorted[k].pos;
-                colSorted.splice(k, 1);
-                break;
-              }
-            }
-            positions.push(found || { r: r, c: c });
-          }
-        }
-      }
-      return positions;
-    } else if (direction === 'down') {
-      var colSorted = [];
+    } else if (dir === 'down') {
       for (var c = 0; c < SIZE; c++) {
-        var filtered = [];
-        for (var r = SIZE - 1; r >= 0; r--) {
-          if (oldGrid[r][c] !== 0) filtered.push({ value: oldGrid[r][c], origR: r });
-        }
+        var items = process.filter(function (p) { return p.c === c; })
+                           .sort(function (a, b) { return b.r - a.r; });
         var tr = SIZE - 1;
-        for (var i = 0; i < filtered.length; i++) {
-          if (i + 1 < filtered.length && filtered[i].value === filtered[i + 1].value) {
-            colSorted.push({ pos: { r: tr, c: c }, origR: filtered[i].origR, origC: c });
-            i++;
-            colSorted.push({ pos: { r: tr, c: c }, origR: filtered[i].origR, origC: c });
-            tr--;
+        for (var i = 0; i < items.length; i++) {
+          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
+            items[i].target = { r: tr, c: c };
+            items[i + 1].target = { r: tr, c: c };
+            tr--; i++;
           } else {
-            colSorted.push({ pos: { r: tr, c: c }, origR: filtered[i].origR, origC: c });
+            items[i].target = { r: tr, c: c };
             tr--;
           }
         }
       }
-      var posMap = [];
-      for (var r = 0; r < SIZE; r++) {
-        for (var c = 0; c < SIZE; c++) {
-          if (oldGrid[r][c] !== 0) {
-            var found = null;
-            for (var k = 0; k < colSorted.length; k++) {
-              if (colSorted[k].origR === r && colSorted[k].origC === c) {
-                found = colSorted[k].pos;
-                colSorted.splice(k, 1);
-                break;
-              }
-            }
-            positions.push(found || { r: r, c: c });
-          }
-        }
-      }
-      return positions;
     }
 
-    return positions;
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        for (var k = 0; k < process.length; k++)
+          if (process[k].r === r && process[k].c === c && !process[k].used) {
+            out.push(process[k].target || { r: r, c: c });
+            process[k].used = true;
+            break;
+          }
+
+    return out;
   }
 
   function showScorePop(text) {
     var pop = document.createElement('div');
     pop.className = 'score-pop';
     pop.textContent = text;
-    var scoreBox = document.querySelector('.score-box');
-    var rect = scoreBox.getBoundingClientRect();
-    pop.style.left = rect.left + rect.width / 2 - 20 + 'px';
-    pop.style.top = rect.top - 10 + 'px';
-    pop.style.position = 'fixed';
+    var box = document.querySelector('.score-box');
+    var rect = box.getBoundingClientRect();
+    pop.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+    pop.style.top = (rect.top - 10) + 'px';
     document.body.appendChild(pop);
     setTimeout(function () {
       if (pop.parentNode) pop.parentNode.removeChild(pop);
     }, 650);
   }
 
-  // ========================
-  //   Game Over Check
-  // ========================
+  // ---- Game Over ----
 
-  function checkGameOver() {
-    for (var r = 0; r < SIZE; r++) {
+  function isGameOver() {
+    for (var r = 0; r < SIZE; r++)
       for (var c = 0; c < SIZE; c++) {
         if (grid[r][c] === 0) return false;
         if (c + 1 < SIZE && grid[r][c] === grid[r][c + 1]) return false;
         if (r + 1 < SIZE && grid[r][c] === grid[r + 1][c]) return false;
       }
-    }
     return true;
   }
 
@@ -517,12 +425,10 @@
     playerNameEl.style.display = '';
     btnSave.style.display = '';
     overlayEl.classList.remove('hidden');
-    hideMobileControls();
+    mobileControls.classList.add('hidden');
   }
 
-  // ========================
-  //   Undo
-  // ========================
+  // ---- Undo ----
 
   function undo() {
     if (animating || gameOver || !prevGrid) return;
@@ -530,177 +436,91 @@
     score = prevScore;
     prevGrid = null;
     prevScore = null;
-    renderGrid(null, null);
+    renderAll(null, null);
     updateScore();
     saveGame();
   }
 
-  // ========================
-  //   Leaderboard
-  // ========================
+  // ---- Leaderboard ----
 
-  function loadLeaderboard() {
-    try {
-      var data = localStorage.getItem('2048_leaderboard');
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function saveLeaderboard(board) {
-    localStorage.setItem('2048_leaderboard', JSON.stringify(board));
+  function getLeaderboard() {
+    try { return JSON.parse(localStorage.getItem('2048_leaderboard')) || []; }
+    catch (e) { return []; }
   }
 
   function addRecord(name, s) {
-    var board = loadLeaderboard();
-    board.push({
-      name: name,
-      score: s,
-      date: new Date().toLocaleDateString('ru-RU')
-    });
-    board.sort(function (a, b) { return b.score - a.score; });
-    if (board.length > 10) board.length = 10;
-    saveLeaderboard(board);
+    var b = getLeaderboard();
+    b.push({ name: name, score: s, date: new Date().toLocaleDateString('ru-RU') });
+    b.sort(function (a, b) { return b.score - a.score; });
+    if (b.length > 10) b.length = 10;
+    localStorage.setItem('2048_leaderboard', JSON.stringify(b));
   }
 
   function renderLeaderboard() {
-    var board = loadLeaderboard();
-
-    while (leaderboardBody.firstChild) {
-      leaderboardBody.removeChild(leaderboardBody.firstChild);
-    }
-
-    if (board.length === 0) {
-      noRecords.classList.remove('hidden');
-      return;
-    }
-
+    var b = getLeaderboard();
+    while (leaderboardBody.firstChild) leaderboardBody.removeChild(leaderboardBody.firstChild);
+    if (b.length === 0) { noRecords.classList.remove('hidden'); return; }
     noRecords.classList.add('hidden');
-
-    board.forEach(function (entry, i) {
+    b.forEach(function (e, i) {
       var tr = document.createElement('tr');
-
-      var tdNum = document.createElement('td');
-      tdNum.textContent = i + 1;
-      tr.appendChild(tdNum);
-
-      var tdName = document.createElement('td');
-      tdName.textContent = entry.name;
-      tr.appendChild(tdName);
-
-      var tdScore = document.createElement('td');
-      tdScore.textContent = entry.score;
-      tr.appendChild(tdScore);
-
-      var tdDate = document.createElement('td');
-      tdDate.textContent = entry.date;
-      tr.appendChild(tdDate);
-
+      [i + 1, e.name, e.score, e.date].forEach(function (txt) {
+        var td = document.createElement('td');
+        td.textContent = txt;
+        tr.appendChild(td);
+      });
       leaderboardBody.appendChild(tr);
     });
   }
 
-  // ========================
-  //   Save / Load Game
-  // ========================
+  // ---- Save / Load ----
 
   function saveGame() {
-    var state = {
-      grid: grid,
-      score: score,
-      gameOver: gameOver,
-      prevGrid: prevGrid,
-      prevScore: prevScore
-    };
-    localStorage.setItem('2048_state', JSON.stringify(state));
+    localStorage.setItem('2048_state', JSON.stringify({
+      grid: grid, score: score, gameOver: gameOver,
+      prevGrid: prevGrid, prevScore: prevScore
+    }));
   }
 
   function loadGame() {
     try {
-      var data = localStorage.getItem('2048_state');
-      if (!data) return false;
-      var state = JSON.parse(data);
-      if (!state.grid || state.grid.length !== SIZE) return false;
-      grid = state.grid;
-      score = state.score || 0;
-      gameOver = state.gameOver || false;
-      prevGrid = state.prevGrid || null;
-      prevScore = state.prevScore != null ? state.prevScore : null;
+      var s = JSON.parse(localStorage.getItem('2048_state'));
+      if (!s || !s.grid || s.grid.length !== SIZE) return false;
+      grid = s.grid; score = s.score || 0;
+      gameOver = s.gameOver || false;
+      prevGrid = s.prevGrid || null;
+      prevScore = s.prevScore != null ? s.prevScore : null;
       return true;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   }
 
-  function saveBest() {
-    localStorage.setItem('2048_best', String(best));
-  }
-
-  function loadBest() {
-    var val = localStorage.getItem('2048_best');
-    return val ? parseInt(val, 10) : 0;
-  }
-
-  // ========================
-  //   New Game
-  // ========================
+  // ---- New Game ----
 
   function newGame() {
-    gameOver = false;
-    score = 0;
-    prevGrid = null;
-    prevScore = null;
+    gameOver = false; score = 0;
+    prevGrid = null; prevScore = null;
     grid = emptyGrid();
-    var startCount = 1 + Math.floor(Math.random() * 3);
-    addRandomTile(startCount);
+    addRandom(1 + Math.floor(Math.random() * 3));
     overlayEl.classList.add('hidden');
-    renderGrid(null, null);
+    renderAll(null, null);
     updateScore();
     saveGame();
-    showMobileControls();
+    if (isMobile()) mobileControls.classList.remove('hidden');
   }
 
-  // ========================
-  //   Mobile Controls
-  // ========================
-
-  function showMobileControls() {
-    if (isMobile()) {
-      mobileControls.classList.remove('hidden');
-    }
-  }
-
-  function hideMobileControls() {
-    mobileControls.classList.add('hidden');
-  }
-
-  // ========================
-  //   Event Listeners
-  // ========================
+  // ---- Events ----
 
   document.addEventListener('keydown', function (e) {
-    var dirMap = {
-      ArrowUp: 'up', ArrowDown: 'down',
-      ArrowLeft: 'left', ArrowRight: 'right'
-    };
-    if (dirMap[e.key]) {
-      e.preventDefault();
-      move(dirMap[e.key]);
-    }
+    var map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+    if (map[e.key]) { e.preventDefault(); move(map[e.key]); }
   });
 
-  btnNew.addEventListener('click', function () { newGame(); });
-  btnUndo.addEventListener('click', function () { undo(); });
-
-  btnRetry.addEventListener('click', function () { newGame(); });
+  btnNew.addEventListener('click', newGame);
+  btnUndo.addEventListener('click', undo);
+  btnRetry.addEventListener('click', newGame);
 
   btnSave.addEventListener('click', function () {
     var name = playerNameEl.value.trim();
-    if (!name) {
-      playerNameEl.focus();
-      return;
-    }
+    if (!name) { playerNameEl.focus(); return; }
     addRecord(name, score);
     gameoverTitleEl.textContent = 'Ваш рекорд сохранён!';
     playerNameEl.style.display = 'none';
@@ -717,9 +537,7 @@
   });
 
   leaderboardModal.addEventListener('click', function (e) {
-    if (e.target === leaderboardModal) {
-      leaderboardModal.classList.add('hidden');
-    }
+    if (e.target === leaderboardModal) leaderboardModal.classList.add('hidden');
   });
 
   document.getElementById('m-up').addEventListener('click', function () { move('up'); });
@@ -727,59 +545,37 @@
   document.getElementById('m-left').addEventListener('click', function () { move('left'); });
   document.getElementById('m-right').addEventListener('click', function () { move('right'); });
 
-  // Swipe support
   (function () {
-    var startX, startY;
-    var threshold = 30;
-
+    var sx, sy;
     boardEl.addEventListener('touchstart', function (e) {
-      var touch = e.touches[0];
-      startX = touch.clientX;
-      startY = touch.clientY;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
     }, { passive: true });
-
     boardEl.addEventListener('touchend', function (e) {
-      if (!startX || !startY) return;
-      var touch = e.changedTouches[0];
-      var dx = touch.clientX - startX;
-      var dy = touch.clientY - startY;
-      var absDx = Math.abs(dx);
-      var absDy = Math.abs(dy);
-
-      if (Math.max(absDx, absDy) < threshold) return;
-
-      if (absDx > absDy) {
-        move(dx > 0 ? 'right' : 'left');
-      } else {
-        move(dy > 0 ? 'down' : 'up');
-      }
-
-      startX = null;
-      startY = null;
+      if (sx == null) return;
+      var dx = e.changedTouches[0].clientX - sx;
+      var dy = e.changedTouches[0].clientY - sy;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
+      move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+      sx = sy = null;
     }, { passive: true });
   })();
 
-  // ========================
-  //   Init
-  // ========================
-
   window.addEventListener('resize', function () {
-    createBoard();
-    renderGrid(null, null);
+    calcSizes(); drawCells(); renderAll(null, null);
   });
 
-  best = loadBest();
+  // ---- Init ----
+
+  best = parseInt(localStorage.getItem('2048_best')) || 0;
   bestEl.textContent = best;
-  createBoard();
+  calcSizes();
+  drawCells();
 
   if (loadGame()) {
-    renderGrid(null, null);
+    renderAll(null, null);
     updateScore();
-    if (gameOver) {
-      showGameOver();
-    } else {
-      showMobileControls();
-    }
+    if (gameOver) showGameOver();
+    else if (isMobile()) mobileControls.classList.remove('hidden');
   } else {
     newGame();
   }
