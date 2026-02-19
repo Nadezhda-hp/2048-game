@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2048</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1 class="title">2048</h1>
+      <div class="scores">
+        <div class="score-box">
+          <span class="score-label">Очки</span>
+          <span class="score-value" id="score">0</span>
+        </div>
+        <div class="score-box">
+          <span class="score-label">Рекорд</span>
+          <span class="score-value" id="best">0</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="controls-bar">
+      <button class="btn btn-undo" id="btn-undo" title="Отменить ход">&#8630;</button>
+      <button class="btn btn-new" id="btn-new" title="Новая игра">&#8635;</button>
+      <button class="btn btn-leaders" id="btn-leaders" title="Таблица лидеров">&#9734;</button>
+    </div>
+
+    <div class="board-wrapper">
+      <div class="board" id="board"></div>
+
+      <div class="overlay overlay-gameover hidden" id="overlay-gameover">
+        <div class="overlay-content">
+          <p class="overlay-title" id="gameover-title">Игра окончена!</p>
+          <p class="overlay-score">Ваш счёт: <strong id="gameover-score">0</strong></p>
+          <div id="submit-section">
+            <input type="text" class="name-input" id="player-name" placeholder="Введите имя" maxlength="20">
+            <button class="btn btn-save" id="btn-save">Сохранить результат</button>
+          </div>
+          <button class="btn btn-retry" id="btn-retry">Начать заново</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-controls hidden" id="mobile-controls">
+      <button class="m-btn m-up" id="m-up">&#9650;</button>
+      <div class="m-row">
+        <button class="m-btn m-left" id="m-left">&#9664;</button>
+        <button class="m-btn m-down" id="m-down">&#9660;</button>
+        <button class="m-btn m-right" id="m-right">&#9654;</button>
+      </div>
+    </div>
+
+    <div class="leaderboard-modal hidden" id="leaderboard-modal">
+      <div class="leaderboard-content">
+        <div class="leaderboard-header">
+          <h2>Таблица лидеров</h2>
+          <button class="btn btn-close" id="btn-close-leaders">&times;</button>
+        </div>
+        <table class="leaderboard-table" id="leaderboard-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Имя</th>
+              <th>Очки</th>
+              <th>Дата</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-body"></tbody>
+        </table>
+        <p class="no-records hidden" id="no-records">Записей пока нет</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
