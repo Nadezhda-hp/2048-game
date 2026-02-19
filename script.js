@@ -37,12 +37,18 @@
   //   Helpers
   // ========================
 
+  function getBoardMetrics() {
+    var boardWidth = boardEl.clientWidth;
+    var gap = Math.round(boardWidth * 0.024);
+    var cellSize = Math.floor((boardWidth - (SIZE + 1) * gap) / SIZE);
+    return { gap: gap, cellSize: cellSize };
+  }
+
   function cellPos(row, col) {
-    var gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap'));
-    var cellSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size'));
+    var m = getBoardMetrics();
     return {
-      left: gap + col * (cellSize + gap),
-      top: gap + row * (cellSize + gap)
+      left: m.gap + col * (m.cellSize + m.gap),
+      top: m.gap + row * (m.cellSize + m.gap)
     };
   }
 
@@ -61,6 +67,7 @@
   function createBoard() {
     boardEl.textContent = '';
     tileElements = [];
+    var m = getBoardMetrics();
     for (var r = 0; r < SIZE; r++) {
       for (var c = 0; c < SIZE; c++) {
         var cell = document.createElement('div');
@@ -68,6 +75,8 @@
         var pos = cellPos(r, c);
         cell.style.left = pos.left + 'px';
         cell.style.top = pos.top + 'px';
+        cell.style.width = m.cellSize + 'px';
+        cell.style.height = m.cellSize + 'px';
         boardEl.appendChild(cell);
       }
     }
@@ -117,6 +126,7 @@
   }
 
   function createTileEl(value, row, col, isNew) {
+    var m = getBoardMetrics();
     var el = document.createElement('div');
     var cls = value <= 2048 ? 'tile-' + value : 'tile-big';
     el.className = 'tile ' + cls;
@@ -124,6 +134,11 @@
     var pos = cellPos(row, col);
     el.style.left = pos.left + 'px';
     el.style.top = pos.top + 'px';
+    el.style.width = m.cellSize + 'px';
+    el.style.height = m.cellSize + 'px';
+    if (m.cellSize < 80) {
+      el.style.fontSize = value >= 1024 ? '18px' : value >= 128 ? '22px' : '28px';
+    }
     el.textContent = value;
     boardEl.appendChild(el);
     tileElements.push(el);
@@ -276,6 +291,7 @@
       }
     }
 
+    var m = getBoardMetrics();
     oldPositions.forEach(function (pos) {
       var el = document.createElement('div');
       var cls = pos.value <= 2048 ? 'tile-' + pos.value : 'tile-big';
@@ -283,6 +299,11 @@
       var cellP = cellPos(pos.r, pos.c);
       el.style.left = cellP.left + 'px';
       el.style.top = cellP.top + 'px';
+      el.style.width = m.cellSize + 'px';
+      el.style.height = m.cellSize + 'px';
+      if (m.cellSize < 80) {
+        el.style.fontSize = pos.value >= 1024 ? '18px' : pos.value >= 128 ? '22px' : '28px';
+      }
       el.textContent = pos.value;
       boardEl.appendChild(el);
       movingTiles.push(el);
@@ -741,6 +762,11 @@
   // ========================
   //   Init
   // ========================
+
+  window.addEventListener('resize', function () {
+    createBoard();
+    renderGrid(null, null);
+  });
 
   best = loadBest();
   bestEl.textContent = best;

@@ -151,24 +151,22 @@ body {
   width: 100%;
   height: 100%;
   background: var(--board-bg);
-  border-radius: calc(var(--radius) + 4px);
-  padding: var(--gap);
+  border-radius: 12px;
   position: relative;
+  overflow: hidden;
+}
+
+.cell,
+.tile {
+  position: absolute;
+  border-radius: var(--radius);
 }
 
 .cell {
-  position: absolute;
-  width: var(--cell-size);
-  height: var(--cell-size);
   background: var(--cell-bg);
-  border-radius: var(--radius);
 }
 
 .tile {
-  position: absolute;
-  width: var(--cell-size);
-  height: var(--cell-size);
-  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
