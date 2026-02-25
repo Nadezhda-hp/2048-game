@@ -185,7 +185,15 @@ body {
 }
 
 .tile-new { animation: tile-appear 240ms ease forwards; }
-.tile-merged { animation: tile-merge 260ms ease forwards; z-index: 20; }
+.tile-merged {
+  --merge-count: 1;
+  animation-name: tile-merge;
+  animation-duration: 180ms;
+  animation-timing-function: ease;
+  animation-iteration-count: var(--merge-count);
+  animation-fill-mode: forwards;
+  z-index: 20;
+}
 
 /* --- Overlay --- */
 

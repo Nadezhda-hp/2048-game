@@ -127,10 +127,13 @@
     tileEls = [];
   }
 
-  function makeTile(val, r, c, extra) {
+  function makeTile(val, r, c, extra, mergeCount) {
     var el = document.createElement('div');
     el.className = 'tile ' + (val <= 2048 ? 'tile-' + val : 'tile-big');
     if (extra) el.classList.add(extra);
+    if (extra === 'tile-merged' && mergeCount > 1) {
+      el.style.setProperty('--merge-count', String(mergeCount));
+    }
     el.style.width = cellPx + 'px';
     el.style.height = cellPx + 'px';
     el.style.left = cellLeft(c) + 'px';
@@ -149,8 +152,22 @@
       for (var c = 0; c < SIZE; c++) {
         if (grid[r][c] === 0) continue;
         var isNew = newCells && newCells.some(function (t) { return t.r === r && t.c === c; });
-        var isMerged = mergedCells && mergedCells.some(function (t) { return t.r === r && t.c === c; });
-        makeTile(grid[r][c], r, c, isNew ? 'tile-new' : isMerged ? 'tile-merged' : null);
+        var mergeMeta = null;
+        if (mergedCells) {
+          for (var i = 0; i < mergedCells.length; i++) {
+            if (mergedCells[i].r === r && mergedCells[i].c === c) {
+              mergeMeta = mergedCells[i];
+              break;
+            }
+          }
+        }
+        makeTile(
+          grid[r][c],
+          r,
+          c,
+          isNew ? 'tile-new' : mergeMeta ? 'tile-merged' : null,
+          mergeMeta ? mergeMeta.count : 0
+        );
       }
     }
   }
@@ -167,35 +184,38 @@
   // ---- Slide Logic ----
 
   function slideRow(row) {
-    var current = row.slice();
+    var current = row.filter(function (v) { return v !== 0; }).map(function (v) {
+      return { v: v, m: 0 };
+    });
     var pts = 0;
     var mi = [];
 
     while (true) {
-      var compressed = current.filter(function (v) { return v !== 0; });
-      while (compressed.length < SIZE) compressed.push(0);
-
-      var merged = compressed.slice();
+      var merged = [];
       var mergedInPass = false;
-      for (var i = 0; i < SIZE - 1; i++) {
-        if (merged[i] !== 0 && merged[i] === merged[i + 1]) {
-          merged[i] = merged[i] * 2;
-          pts += merged[i];
-          merged[i + 1] = 0;
-          mi.push(i);
+      for (var i = 0; i < current.length; i++) {
+        if (i + 1 < current.length && current[i].v === current[i + 1].v) {
+          var nextVal = current[i].v * 2;
+          merged.push({ v: nextVal, m: current[i].m + current[i + 1].m + 1 });
+          pts += nextVal;
           mergedInPass = true;
           i++;
+        } else {
+          merged.push({ v: current[i].v, m: current[i].m });
         }
       }
 
-      var next = merged.filter(function (v) { return v !== 0; });
-      while (next.length < SIZE) next.push(0);
-
-      if (!mergedInPass || current.join() === next.join()) {
-        return { row: next, pts: pts, mi: mi };
-      }
-      current = next;
+      current = merged;
+      if (!mergedInPass) break;
     }
+
+    var out = [];
+    for (var j = 0; j < current.length; j++) {
+      out.push(current[j].v);
+      if (current[j].m > 0) mi.push({ i: j, count: current[j].m });
+    }
+    while (out.length < SIZE) out.push(0);
+    return { row: out, pts: pts, mi: mi };
   }
 
   function getCol(g, c) {
@@ -220,7 +240,7 @@
         if (grid[r].join() !== res.row.join()) changed = true;
         grid[r] = res.row;
         pts += res.pts;
-        res.mi.forEach(function (c) { merged.push({ r: r, c: c }); });
+        res.mi.forEach(function (m) { merged.push({ r: r, c: m.i, count: m.count }); });
       }
     } else if (dir === 'right') {
       for (var r = 0; r < SIZE; r++) {
@@ -229,7 +249,7 @@
         if (grid[r].join() !== row.join()) changed = true;
         grid[r] = row;
         pts += res.pts;
-        res.mi.forEach(function (c) { merged.push({ r: r, c: SIZE - 1 - c }); });
+        res.mi.forEach(function (m) { merged.push({ r: r, c: SIZE - 1 - m.i, count: m.count }); });
       }
     } else if (dir === 'up') {
       for (var c = 0; c < SIZE; c++) {
@@ -238,7 +258,7 @@
         if (col.join() !== res.row.join()) changed = true;
         setCol(grid, c, res.row);
         pts += res.pts;
-        res.mi.forEach(function (r) { merged.push({ r: r, c: c }); });
+        res.mi.forEach(function (m) { merged.push({ r: m.i, c: c, count: m.count }); });
       }
     } else if (dir === 'down') {
       for (var c = 0; c < SIZE; c++) {
@@ -248,7 +268,7 @@
         if (getCol(oldGrid, c).join() !== nc.join()) changed = true;
         setCol(grid, c, nc);
         pts += res.pts;
-        res.mi.forEach(function (r) { merged.push({ r: SIZE - 1 - r, c: c }); });
+        res.mi.forEach(function (m) { merged.push({ r: SIZE - 1 - m.i, c: c, count: m.count }); });
       }
     }
 
@@ -319,89 +339,77 @@
   }
 
   function getTargets(old, dir) {
+    var targetBySource = {};
     var out = [];
-    var process = [];
 
-    for (var r = 0; r < SIZE; r++)
-      for (var c = 0; c < SIZE; c++)
-        if (old[r][c] !== 0)
-          process.push({ r: r, c: c, val: old[r][c] });
+    function key(pos) { return pos.r + ',' + pos.c; }
 
-    if (dir === 'left') {
-      for (var r = 0; r < SIZE; r++) {
-        var items = process.filter(function (p) { return p.r === r; })
-                           .sort(function (a, b) { return a.c - b.c; });
-        var tc = 0;
-        for (var i = 0; i < items.length; i++) {
-          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
-            items[i].target = { r: r, c: tc };
-            items[i + 1].target = { r: r, c: tc };
-            tc++; i++;
-          } else {
-            items[i].target = { r: r, c: tc };
-            tc++;
-          }
+    function assignLine(line, toCoord) {
+      var items = [];
+      for (var i = 0; i < line.length; i++) {
+        if (line[i].val !== 0) {
+          items.push({ v: line[i].val, origins: [line[i].pos] });
         }
       }
-    } else if (dir === 'right') {
-      for (var r = 0; r < SIZE; r++) {
-        var items = process.filter(function (p) { return p.r === r; })
-                           .sort(function (a, b) { return b.c - a.c; });
-        var tc = SIZE - 1;
-        for (var i = 0; i < items.length; i++) {
-          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
-            items[i].target = { r: r, c: tc };
-            items[i + 1].target = { r: r, c: tc };
-            tc--; i++;
+
+      while (true) {
+        var merged = [];
+        var mergedInPass = false;
+        for (var j = 0; j < items.length; j++) {
+          if (j + 1 < items.length && items[j].v === items[j + 1].v) {
+            merged.push({
+              v: items[j].v * 2,
+              origins: items[j].origins.concat(items[j + 1].origins)
+            });
+            mergedInPass = true;
+            j++;
           } else {
-            items[i].target = { r: r, c: tc };
-            tc--;
+            merged.push({ v: items[j].v, origins: items[j].origins.slice() });
           }
         }
+        items = merged;
+        if (!mergedInPass) break;
       }
-    } else if (dir === 'up') {
-      for (var c = 0; c < SIZE; c++) {
-        var items = process.filter(function (p) { return p.c === c; })
-                           .sort(function (a, b) { return a.r - b.r; });
-        var tr = 0;
-        for (var i = 0; i < items.length; i++) {
-          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
-            items[i].target = { r: tr, c: c };
-            items[i + 1].target = { r: tr, c: c };
-            tr++; i++;
-          } else {
-            items[i].target = { r: tr, c: c };
-            tr++;
-          }
-        }
-      }
-    } else if (dir === 'down') {
-      for (var c = 0; c < SIZE; c++) {
-        var items = process.filter(function (p) { return p.c === c; })
-                           .sort(function (a, b) { return b.r - a.r; });
-        var tr = SIZE - 1;
-        for (var i = 0; i < items.length; i++) {
-          if (i + 1 < items.length && items[i].val === items[i + 1].val) {
-            items[i].target = { r: tr, c: c };
-            items[i + 1].target = { r: tr, c: c };
-            tr--; i++;
-          } else {
-            items[i].target = { r: tr, c: c };
-            tr--;
-          }
+
+      for (var idx = 0; idx < items.length; idx++) {
+        var target = toCoord(idx);
+        for (var k = 0; k < items[idx].origins.length; k++) {
+          targetBySource[key(items[idx].origins[k])] = target;
         }
       }
     }
 
-    for (var r = 0; r < SIZE; r++)
-      for (var c = 0; c < SIZE; c++)
-        for (var k = 0; k < process.length; k++)
-          if (process[k].r === r && process[k].c === c && !process[k].used) {
-            out.push(process[k].target || { r: r, c: c });
-            process[k].used = true;
-            break;
-          }
+    if (dir === 'left' || dir === 'right') {
+      for (var r = 0; r < SIZE; r++) {
+        var line = [];
+        for (var c = 0; c < SIZE; c++) {
+          var col = dir === 'left' ? c : SIZE - 1 - c;
+          line.push({ val: old[r][col], pos: { r: r, c: col } });
+        }
+        assignLine(line, function (idx) {
+          return { r: r, c: dir === 'left' ? idx : SIZE - 1 - idx };
+        });
+      }
+    } else {
+      for (var c = 0; c < SIZE; c++) {
+        var vline = [];
+        for (var r = 0; r < SIZE; r++) {
+          var row = dir === 'up' ? r : SIZE - 1 - r;
+          vline.push({ val: old[row][c], pos: { r: row, c: c } });
+        }
+        assignLine(vline, function (idx) {
+          return { r: dir === 'up' ? idx : SIZE - 1 - idx, c: c };
+        });
+      }
+    }
 
+    for (var rr = 0; rr < SIZE; rr++) {
+      for (var cc = 0; cc < SIZE; cc++) {
+        if (old[rr][cc] !== 0) {
+          out.push(targetBySource[key({ r: rr, c: cc })] || { r: rr, c: cc });
+        }
+      }
+    }
     return out;
   }
 
