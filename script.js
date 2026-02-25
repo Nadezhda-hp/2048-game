@@ -167,21 +167,35 @@
   // ---- Slide Logic ----
 
   function slideRow(row) {
-    var f = row.filter(function (v) { return v !== 0; });
-    var out = [], pts = 0, mi = [];
-    for (var i = 0; i < f.length; i++) {
-      if (i + 1 < f.length && f[i] === f[i + 1]) {
-        var v = f[i] * 2;
-        out.push(v);
-        pts += v;
-        mi.push(out.length - 1);
-        i++;
-      } else {
-        out.push(f[i]);
+    var current = row.slice();
+    var pts = 0;
+    var mi = [];
+
+    while (true) {
+      var compressed = current.filter(function (v) { return v !== 0; });
+      while (compressed.length < SIZE) compressed.push(0);
+
+      var merged = compressed.slice();
+      var mergedInPass = false;
+      for (var i = 0; i < SIZE - 1; i++) {
+        if (merged[i] !== 0 && merged[i] === merged[i + 1]) {
+          merged[i] = merged[i] * 2;
+          pts += merged[i];
+          merged[i + 1] = 0;
+          mi.push(i);
+          mergedInPass = true;
+          i++;
+        }
       }
+
+      var next = merged.filter(function (v) { return v !== 0; });
+      while (next.length < SIZE) next.push(0);
+
+      if (!mergedInPass || current.join() === next.join()) {
+        return { row: next, pts: pts, mi: mi };
+      }
+      current = next;
     }
-    while (out.length < SIZE) out.push(0);
-    return { row: out, pts: pts, mi: mi };
   }
 
   function getCol(g, c) {
@@ -431,14 +445,11 @@
   // ---- Undo ----
 
   function undo() {
-    if (animating || !prevGrid) return;
+    if (animating || gameOver || !prevGrid) return;
     grid = deepCopy(prevGrid);
     score = prevScore;
     prevGrid = null;
     prevScore = null;
-    gameOver = false;
-    overlayEl.classList.add('hidden');
-    if (isMobile()) mobileControls.classList.remove('hidden');
     renderAll(null, null);
     updateScore();
     saveGame();
@@ -533,14 +544,19 @@
   btnLeaders.addEventListener('click', function () {
     renderLeaderboard();
     leaderboardModal.classList.remove('hidden');
+    mobileControls.classList.add('hidden');
   });
 
   btnCloseLeaders.addEventListener('click', function () {
     leaderboardModal.classList.add('hidden');
+    if (isMobile() && !gameOver) mobileControls.classList.remove('hidden');
   });
 
   leaderboardModal.addEventListener('click', function (e) {
-    if (e.target === leaderboardModal) leaderboardModal.classList.add('hidden');
+    if (e.target === leaderboardModal) {
+      leaderboardModal.classList.add('hidden');
+      if (isMobile() && !gameOver) mobileControls.classList.remove('hidden');
+    }
   });
 
   document.getElementById('m-up').addEventListener('click', function () { move('up'); });
