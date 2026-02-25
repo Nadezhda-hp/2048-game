@@ -3,7 +3,7 @@
 
   var SIZE = 4;
   var GAP = 10;
-  var ANIM_MS = 150;
+  var ANIM_MS = 240;
 
   var boardEl = document.getElementById('board');
   var scoreEl = document.getElementById('score');
@@ -431,11 +431,14 @@
   // ---- Undo ----
 
   function undo() {
-    if (animating || gameOver || !prevGrid) return;
+    if (animating || !prevGrid) return;
     grid = deepCopy(prevGrid);
     score = prevScore;
     prevGrid = null;
     prevScore = null;
+    gameOver = false;
+    overlayEl.classList.add('hidden');
+    if (isMobile()) mobileControls.classList.remove('hidden');
     renderAll(null, null);
     updateScore();
     saveGame();

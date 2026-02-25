@@ -184,8 +184,8 @@ body {
   100% { transform: scale(1); }
 }
 
-.tile-new { animation: tile-appear 200ms ease forwards; }
-.tile-merged { animation: tile-merge 200ms ease forwards; z-index: 20; }
+.tile-new { animation: tile-appear 240ms ease forwards; }
+.tile-merged { animation: tile-merge 260ms ease forwards; z-index: 20; }
 
 /* --- Overlay --- */
 
